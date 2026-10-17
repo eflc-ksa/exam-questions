@@ -63,3 +63,29 @@ $('#back').onclick=()=>{
   $('#scores').classList.add('hidden');$('#back').classList.add('hidden');$('#heading').textContent='أقسام الاختبارات';
 };
 loadSections();
+
+(function(){
+  const NS='omar-exams-eflc',BASE='https://api.counterapi.dev/v1/'+NS+'/';
+  const fmt=n=>Number(n).toLocaleString('ar-SA');
+  const safeGet=(s,k)=>{try{return s.getItem(k)}catch{return null}};
+  const safeSet=(s,k,v)=>{try{s.setItem(k,v)}catch{}};
+  async function hit(name,increment){
+    const r=await fetch(BASE+name+(increment?'/up':''));
+    if(!r.ok)throw Error('x');
+    const d=await r.json();
+    return d.count;
+  }
+  async function run(){
+    try{
+      const newSession=!safeGet(sessionStorage,'omar-visit-counted');
+      const newVisitor=!safeGet(localStorage,'omar-visitor-counted');
+      const [total,unique]=await Promise.all([hit('visits',newSession),hit('visitors',newVisitor)]);
+      if(newSession)safeSet(sessionStorage,'omar-visit-counted','1');
+      if(newVisitor)safeSet(localStorage,'omar-visitor-counted','1');
+      document.getElementById('totalVisits').textContent=fmt(total);
+      document.getElementById('uniqueVisitors').textContent=fmt(unique);
+      document.getElementById('visitStats').classList.remove('hidden');
+    }catch{}
+  }
+  run();
+})();
