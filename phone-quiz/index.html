@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>اختبار صيانة الجوالات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>html{color-scheme:light}@media (prefers-color-scheme:dark){html{color-scheme:dark}}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap"><main id="app"></main></div>
+<script src="config.js"></script>
+<script src="questions.js"></script>
+<script>
+const KEYS = ["أ","ب","ج","د"];
+const STORE = "phone-quiz-result-v1";
+const app = document.getElementById("app");
+const S = {view:"start",name:"",answers:Array(Q.length).fill(null),cur:0,confirm:false,saved:null,sending:false,saveFailed:false,showAll:false};
+
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ar = n => Number(n).toLocaleString("ar-SA");
+const cats = [...new Set(Q.map(x=>x.c))];
+const scoreOf = ans => ans.reduce((s,v,i)=>s+(v===Q[i].a?1:0),0);
+const pct = s => Math.round(s/Q.length*100);
+
+try{ const old = JSON.parse(localStorage.getItem(STORE)||"null"); if(old && Array.isArray(old.answers)){ S.saved=old; S.view="done"; } }catch(e){}
+
+function render(){ ({start:vStart,quiz:vQuiz,done:vDone})[S.view](); }
+
+function vStart(){
+  app.innerHTML = `
+  <section class="head">
+    <span class="eyebrow">دورة صيانة الجوالات الذكية للمبتدئين</span>
+    <h1>اختبار نهاية الدورة</h1>
+    <div class="chips">
+      <span class="chip"><b class="num">${ar(Q.length)}</b> سؤالًا</span>
+      <span class="chip">الوقت المقترح <b class="num">${ar(30)}</b> دقيقة</span>
+      <span class="chip">النجاح من <b class="num">${ar(PASS)}٪</b></span>
+    </div>
+  </section>
+  <section class="panel">
+    <h2>قبل أن تبدأ</h2>
+    <p class="muted">اختر إجابة واحدة لكل سؤال. تستطيع التنقل بين الأسئلة وتغيير إجاباتك قبل التسليم. بعد التسليم تظهر درجتك وتصحيح كل سؤال مع الشرح.</p>
+    <div class="topics">${cats.map(c=>`<div class="topic"><b>${c}</b>${ar(Q.filter(x=>x.c===c).length)} أسئلة</div>`).join("")}</div>
+    <label class="field" for="name">اسمك الكامل
+      <input type="text" id="name" autocomplete="name" placeholder="مثال: عبدالله محمد" value="${esc(S.name)}">
+    </label>
+    <div class="row"><button class="btn" id="go" ${S.name.trim().length<3?"disabled":""}>ابدأ الاختبار</button></div>
+  </section>`;
+  const inp=document.getElementById("name"), go=document.getElementById("go");
+  inp.oninput=()=>{S.name=inp.value;go.disabled=S.name.trim().length<3;};
+  go.onclick=()=>{S.view="quiz";S.cur=0;render();window.scrollTo(0,0);};
+}
+
+function vQuiz(){
+  const i=S.cur,q=Q[i],answered=S.answers.filter(v=>v!==null).length,left=Q.length-answered,last=i===Q.length-1;
+  app.innerHTML = `
+  <section class="panel">
+    <div class="qmeta"><span class="num">السؤال ${ar(i+1)} من ${ar(Q.length)}</span><span class="cat">${q.c}</span></div>
+    <div class="progress" aria-hidden="true"><span style="width:${answered/Q.length*100}%"></span></div>
+    <p class="qtext">${q.q}</p>
+    <div class="opts" role="radiogroup">
+      ${q.o.map((t,k)=>`<button class="opt" role="radio" id="o${k}" data-k="${k}" aria-checked="${S.answers[i]===k}"><span class="key">${KEYS[k]}</span><span>${t}</span></button>`).join("")}
+    </div>
+    <div class="row between">
+      <button class="btn ghost small" id="prev" ${i===0?"disabled":""}>السابق</button>
+      ${last?`<button class="btn small" id="finish">إنهاء وتسليم</button>`:`<button class="btn small" id="next">التالي</button>`}
+    </div>
+    ${S.confirm?`<div class="confirm"><p>بقي <b class="num">${ar(left)}</b> ${left===1?"سؤال":"أسئلة"} دون إجابة وسيُحسب خطأ. هل تريد التسليم الآن؟</p>
+      <div class="row"><button class="btn small" id="yes">نعم، سلّم الاختبار</button><button class="btn ghost small" id="no">أكمل الإجابات</button></div></div>`:""}
+  </section>
+  <section class="panel">
+    <h3>كل الأسئلة</h3>
+    <div class="dots">${Q.map((_,k)=>`<button class="dot num ${S.answers[k]!==null?"done":""} ${k===i?"now":""}" data-j="${k}" aria-label="السؤال ${k+1}">${ar(k+1)}</button>`).join("")}</div>
+  </section>`;
+  app.querySelectorAll(".opt").forEach(b=>b.onclick=()=>{S.answers[i]=+b.dataset.k;S.confirm=false;if(!last)S.cur++;render();});
+  app.querySelectorAll(".dot").forEach(b=>b.onclick=()=>{S.cur=+b.dataset.j;S.confirm=false;render();});
+  const p=document.getElementById("prev");if(p)p.onclick=()=>{S.cur--;S.confirm=false;render();};
+  const n=document.getElementById("next");if(n)n.onclick=()=>{S.cur++;render();};
+  const f=document.getElementById("finish");if(f)f.onclick=()=>{if(left>0){S.confirm=true;render();}else submit();};
+  const y=document.getElementById("yes");if(y)y.onclick=submit;
+  const no=document.getElementById("no");if(no)no.onclick=()=>{S.confirm=false;S.cur=S.answers.findIndex(v=>v===null);render();};
+}
+
+async function submit(){
+  S.saved={name:S.name.trim(),answers:S.answers.map(v=>v===null?-1:v),score:scoreOf(S.answers),total:Q.length,submittedAt:new Date().toISOString()};
+  S.view="done";S.confirm=false;S.sending=true;S.saveFailed=false;render();window.scrollTo(0,0);
+  await send();
+}
+
+async function send(){
+  S.sending=true;S.saveFailed=false;render();
+  try{
+    if(!SCRIPT_URL) throw new Error("no url");
+    const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify({action:"submit",name:S.saved.name,answers:S.saved.answers})});
+    const j=await res.json();
+    if(!j.ok) throw new Error(j.error);
+    S.saved.sent=true;
+    try{localStorage.setItem(STORE,JSON.stringify(S.saved));}catch(e){}
+  }catch(e){S.saveFailed=true;}
+  S.sending=false;render();
+}
+
+function resultText(r){
+  return `نتيجة اختبار صيانة الجوالات\nالاسم: ${r.name}\nالدرجة: ${r.score} من ${r.total} (${pct(r.score)}٪)\nالأسئلة الخاطئة: ${r.answers.map((v,i)=>v===Q[i].a?null:i+1).filter(Boolean).join("، ")||"لا يوجد"}`;
+}
+
+function vDone(){
+  const r=S.saved,p=pct(r.score),pass=p>=PASS;
+  const items=Q.map((q,i)=>({q,i,v:r.answers[i]})).filter(x=>S.showAll||x.v!==x.q.a);
+  let status="";
+  if(S.sending) status=`<p class="status">جارٍ إرسال نتيجتك إلى المدرب…</p>`;
+  else if(S.saveFailed) status=`<div class="note"><p><b>لم تُرسل النتيجة إلى المدرب.</b> تأكد من اتصالك بالإنترنت ثم اضغط «إعادة الإرسال»، أو انسخ النتيجة وأرسلها له عبر الواتساب.</p>
+      <div class="row" style="margin-top:8px"><button class="btn small" id="retry">إعادة الإرسال</button><button class="btn ghost small" id="copy">نسخ النتيجة</button><span class="status" id="copied"></span></div>
+      <textarea id="rtext" readonly style="position:absolute;opacity:0;pointer-events:none" aria-hidden="true">${esc(resultText(r))}</textarea></div>`;
+  else if(r.sent) status=`<p class="status">تم إرسال نتيجتك إلى المدرب.</p>`;
+  app.innerHTML = `
+  <section class="panel">
+    <div class="score">
+      <div class="ring" style="--p:${p}"><div><span><b class="num">${ar(r.score)}</b><br><small class="muted">من ${ar(r.total)}</small></span></div></div>
+      <div style="display:flex;flex-direction:column;gap:8px;min-width:0">
+        <h2>${esc(r.name)}</h2>
+        <p class="num">نسبتك ${ar(p)}٪ <span class="pill ${pass?"pass":"fail"}">${pass?"ناجح":"لم تجتز الاختبار"}</span></p>
+        <p class="muted" style="font-size:.9rem">${pass?"أحسنت، راجع الأسئلة الخاطئة أدناه لتثبيت المعلومة.":"راجع الشرح أدناه، ثم ناقش المدرب في المواضيع التي أخطأت فيها."}</p>
+      </div>
+    </div>
+    ${status}
+  </section>
+  <section class="panel">
+    <div class="row between"><h2>${S.showAll?"تصحيح كل الأسئلة":"الأسئلة التي أخطأت فيها"}</h2>
+      <button class="btn ghost small" id="toggle">${S.showAll?"اعرض الخاطئة فقط":"اعرض كل الأسئلة"}</button></div>
+    <div class="review">
+    ${items.length?items.map(({q,i,v})=>{const ok=v===q.a;return `<div class="rv ${ok?"ok":"no"}">
+      <span class="muted num" style="font-size:.82rem">السؤال ${ar(i+1)} · ${q.c}</span>
+      <b>${q.q}</b>
+      <span class="ans">${ok?`<span class="good">إجابتك صحيحة: ${q.o[q.a]}</span>`:`${v>=0?`<span class="bad">${q.o[v]}</span><br>`:`<span class="muted">لم تُجب</span><br>`}<span class="good">الصحيح: ${q.o[q.a]}</span>`}</span>
+      <span class="muted" style="font-size:.9rem">${q.e}</span></div>`}).join(""):`<p class="muted">لا توجد أخطاء. ممتاز!</p>`}
+    </div>
+  </section>`;
+  document.getElementById("toggle").onclick=()=>{S.showAll=!S.showAll;render();};
+  const rt=document.getElementById("retry");if(rt)rt.onclick=send;
+  const c=document.getElementById("copy");
+  if(c)c.onclick=async()=>{const msg=document.getElementById("copied");
+    try{await navigator.clipboard.writeText(resultText(r));msg.textContent="تم النسخ";}
+    catch(e){const ta=document.getElementById("rtext");Object.assign(ta.style,{opacity:"1",position:"static",pointerEvents:"auto",width:"100%"});ta.rows=5;ta.select();msg.textContent="حدّد النص وانسخه يدويًا";}};
+}
+
+render();
+</script>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>نتائج اختبار صيانة الجوالات</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Readex+Pro:wght@500;600;700&family=IBM+Plex+Sans+Arabic:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+<style>html{color-scheme:light}@media (prefers-color-scheme:dark){html{color-scheme:dark}}body{margin:0}[hidden]{display:none!important}</style>
+</head>
+<body>
+<div class="wrap"><main id="app"></main></div>
+<script src="config.js"></script>
+<script src="questions.js"></script>
+<script>
+const app=document.getElementById("app");
+const S={pw:"",rows:null,loading:false,err:"",openRow:null,confirmDel:null,delErr:""};
+try{S.pw=sessionStorage.getItem("pq-pw")||"";}catch(e){}
+
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const ar=n=>Number(n).toLocaleString("ar-SA");
+const pct=(s,t)=>Math.round(s/(t||Q.length)*100);
+
+async function api(body){
+  if(!SCRIPT_URL) throw new Error("no_url");
+  const res=await fetch(SCRIPT_URL,{method:"POST",body:JSON.stringify({...body,password:S.pw})});
+  const j=await res.json();
+  if(!j.ok) throw new Error(j.error||"fail");
+  return j;
+}
+
+async function load(){
+  S.loading=true;S.err="";render();
+  try{
+    const j=await api({action:"list"});
+    S.rows=j.rows;
+    try{sessionStorage.setItem("pq-pw",S.pw);}catch(e){}
+  }catch(e){
+    if(e.message==="auth"){S.err="كلمة المرور غير صحيحة.";S.rows=null;S.pw="";try{sessionStorage.removeItem("pq-pw");}catch(_){}}
+    else if(e.message==="no_url"){S.err="لم يُضف رابط سكربت قوقل في ملف config.js بعد.";}
+    else S.err="تعذّر تحميل النتائج. تأكد من اتصالك بالإنترنت ثم حاول مرة أخرى.";
+  }
+  S.loading=false;render();
+}
+
+function render(){ if(S.rows===null) vLogin(); else vResults(); }
+
+function vLogin(){
+  app.innerHTML=`
+  <section class="head"><span class="eyebrow">لوحة المدرب</span><h1>نتائج اختبار صيانة الجوالات</h1></section>
+  <section class="panel">
+    <p class="muted">هذه الصفحة للمدرب فقط. أدخل كلمة المرور التي وضعتها في سكربت قوقل.</p>
+    <form id="f" style="display:flex;flex-direction:column;gap:14px">
+      <label class="field" for="pw">كلمة المرور
+        <input type="text" id="pw" autocomplete="current-password" style="-webkit-text-security:disc" value="${esc(S.pw)}">
+      </label>
+      <div class="row"><button class="btn" id="go" ${S.loading?"disabled":""}>${S.loading?"جارٍ التحميل…":"عرض النتائج"}</button></div>
+      ${S.err?`<p class="status" style="color:var(--bad)">${S.err}</p>`:""}
+    </form>
+  </section>`;
+  document.getElementById("f").onsubmit=e=>{e.preventDefault();S.pw=document.getElementById("pw").value.trim();if(S.pw)load();};
+}
+
+function vResults(){
+  const rows=S.rows;
+  const head=`<section class="head"><span class="eyebrow">لوحة المدرب</span><h1>نتائج المتدربين</h1>
+    <div class="row"><button class="btn ghost small" id="refresh" ${S.loading?"disabled":""}>${S.loading?"جارٍ التحديث…":"تحديث النتائج"}</button>
+    <button class="btn ghost small" id="logout">خروج</button>
+    ${S.err?`<span class="status" style="color:var(--bad)">${S.err}</span>`:""}</div></section>`;
+  if(!rows.length){
+    app.innerHTML=head+`<section class="panel"><div class="empty"><h3>لم يسلّم أحد الاختبار بعد</h3>
+      <p>أرسل رابط صفحة الاختبار للمتدربين، ثم اضغط «تحديث النتائج» لتظهر درجاتهم هنا.</p></div></section>`;
+    bindHead();return;
+  }
+  const n=rows.length,avg=Math.round(rows.reduce((s,r)=>s+pct(r.score,r.total),0)/n),passN=rows.filter(r=>pct(r.score,r.total)>=PASS).length;
+  const perQ=Q.map((q,i)=>({i,q,r:Math.round(rows.filter(x=>x.answers[i]===q.a).length/n*100)})).sort((a,b)=>a.r-b.r).slice(0,8);
+  const sorted=[...rows].sort((a,b)=>b.score-a.score);
+  app.innerHTML=head+`
+  <div class="tiles">
+    <div class="tile"><b class="num">${ar(n)}</b><span>متدرب سلّم</span></div>
+    <div class="tile"><b class="num">${ar(avg)}٪</b><span>متوسط الدرجات</span></div>
+    <div class="tile"><b class="num">${ar(passN)}</b><span>ناجح من ${ar(n)}</span></div>
+  </div>
+  <section class="panel">
+    <h2>أصعب الأسئلة</h2>
+    <p class="muted" style="font-size:.9rem">نسبة من أجاب إجابة صحيحة. الأقل نسبة يحتاج إعادة شرح في الدورة.</p>
+    <div class="bars">${perQ.map(x=>`<div class="bar"><span class="n num">${ar(x.i+1)}</span><span class="t" title="${esc(x.q.q)}">${x.q.q}</span><span class="track"><span style="width:${x.r}%"></span></span><span class="v num">${ar(x.r)}٪</span></div>`).join("")}</div>
+  </section>
+  <section class="panel">
+    <div class="row between"><h2>درجات المتدربين</h2><button class="btn ghost small" id="csv">تنزيل جدول النتائج</button></div>
+    <div class="tbl-wrap"><table>
+      <thead><tr><th>الاسم</th><th>الدرجة</th><th>النسبة</th><th>الحالة</th></tr></thead>
+      <tbody>${sorted.map(r=>{const p=pct(r.score,r.total);const wrong=r.answers.map((v,i)=>v===Q[i].a?null:i+1).filter(Boolean);
+        return `<tr class="stu" data-id="${esc(r.id)}"><td>${esc(r.name)}</td><td class="num">${ar(r.score)} / ${ar(r.total)}</td><td class="num">${ar(p)}٪</td><td><span class="pill ${p>=PASS?"pass":"fail"}">${p>=PASS?"ناجح":"راسب"}</span></td></tr>
+        ${S.openRow===r.id?`<tr><td colspan="4" style="font-size:.9rem"><div style="display:flex;flex-direction:column;gap:10px">
+          <span class="muted">الأسئلة الخاطئة: <span class="num">${wrong.length?wrong.map(ar).join("، "):"لا يوجد"}</span><br>وقت التسليم: ${new Date(r.submittedAt).toLocaleString("ar-SA")}</span>
+          ${S.confirmDel===r.id
+            ?`<div class="confirm"><p>حذف نتيجة <b>${esc(r.name)}</b> نهائيًا؟</p>
+               <div class="row"><button class="btn small" id="delYes" style="background:var(--bad);color:var(--surface)">نعم، احذف</button><button class="btn ghost small" id="delNo">إبقاء المتدرب</button></div>
+               ${S.delErr?`<p class="status" style="color:var(--bad)">${S.delErr}</p>`:""}</div>`
+            :`<div class="row"><button class="btn ghost small" id="delAsk" style="color:var(--bad);border-color:var(--bad)">حذف هذا المتدرب</button></div>`}
+        </div></td></tr>`:""}`}).join("")}</tbody>
+    </table></div>
+    <p class="status">اضغط على اسم المتدرب لترى أخطاءه، أو لحذفه من النتائج.</p>
+  </section>`;
+  bindHead();
+  app.querySelectorAll("tr.stu").forEach(t=>t.onclick=()=>{const id=t.dataset.id;S.openRow=S.openRow===id?null:id;S.confirmDel=null;S.delErr="";render();});
+  const da=document.getElementById("delAsk");if(da)da.onclick=()=>{S.confirmDel=S.openRow;S.delErr="";render();};
+  const dn=document.getElementById("delNo");if(dn)dn.onclick=()=>{S.confirmDel=null;S.delErr="";render();};
+  const dy=document.getElementById("delYes");if(dy)dy.onclick=async()=>{
+    dy.disabled=true;dy.textContent="جارٍ الحذف…";
+    try{await api({action:"delete",id:S.confirmDel});S.rows=S.rows.filter(r=>r.id!==S.confirmDel);S.openRow=null;S.confirmDel=null;S.delErr="";}
+    catch(e){S.delErr="تعذّر الحذف. تأكد من الاتصال وحاول مرة أخرى.";}
+    render();
+  };
+  document.getElementById("csv").onclick=()=>{
+    const lines=[["الاسم","الدرجة","من","النسبة","الحالة","الأسئلة الخاطئة","وقت التسليم"].join(",")];
+    sorted.forEach(r=>{const p=pct(r.score,r.total);const w=r.answers.map((v,i)=>v===Q[i].a?null:i+1).filter(Boolean).join(" ");
+      lines.push([`"${r.name.replace(/"/g,'""')}"`,r.score,r.total,p+"%",p>=PASS?"ناجح":"راسب",`"${w}"`,`"${new Date(r.submittedAt).toLocaleString("ar-SA")}"`].join(","));});
+    const url=URL.createObjectURL(new Blob(["﻿"+lines.join("\n")],{type:"text/csv;charset=utf-8"}));
+    const a=document.createElement("a");a.href=url;a.download="نتائج-اختبار-صيانة-الجوالات.csv";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),2000);
+  };
+}
+
+function bindHead(){
+  document.getElementById("refresh").onclick=load;
+  document.getElementById("logout").onclick=()=>{S.pw="";S.rows=null;S.err="";try{sessionStorage.removeItem("pq-pw");}catch(e){}render();};
+}
+
+render();
+if(S.pw) load();
+</script>
+</body>
+</html>
